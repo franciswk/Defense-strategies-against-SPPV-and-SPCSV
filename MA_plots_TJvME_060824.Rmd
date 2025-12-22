@@ -1,0 +1,562 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+#' MA Plots: TJ vs ME cultivars Comparison
+#'
+#' Generates MA plots comparing gene expression between TJ and ME plant cultivars
+#' across four conditions: Mock interval 1 & 3, and Treatment interval 1 & 3.
+#'
+#' Workflow:
+#' 1. Load RNA-seq count data from CSV
+#' 2. For each condition (Mock_1, Mock_3, Trt_1, Trt_3):
+#'    - Extract counts for TJ and ME samples with replicates (a, b, c)
+#'    - Create count matrix and sample metadata
+#'    - Run DESeq2 differential expression analysis
+#'    - Apply log2 fold-change shrinkage (apeglm)
+#'    - Generate MA plot (log2FC vs. mean normalized counts)
+#' 3. Filter DEGs: log2FoldChange >= 1.5 and FDR p-value <= 0.05
+#'
+#' Input: countData_0307.csv
+#' Outputs: Four MA plot images (mock_1_MA_plot.png, mock_3_MA_plot.png, 
+#'          trt_1_MA_plot.png, trt_3_MA_plot.png) at 300 dpi, 8×6 inches
+#'
+#' Data available on request
+#' Please cite this publication when using this script: https://doi.org/10.1002/csc2.21392
+#'
+
+```{r}
+# Load necessary library
+library(DESeq2)
+library(dplyr)
+library(stringr)
+library(apeglm)
+```
+
+```{r}
+# Read the cts_all data from CSV file
+eb_tjvme <- read.csv("countData_0307.csv")
+
+colnames(eb_tjvme)
+```
+
+```{r}
+# Mock_1 DGE 
+
+#Create counts df for the specific TJ and ME
+cts <- data.frame(" "= c(eb_tjvme$Name),
+                      Mock_TJ_1_a = c(eb_tjvme$Mock_TJ_1_a_counts),
+                      Mock_TJ_1_b = c(eb_tjvme$Mock_TJ_1_b_counts),
+                      Mock_TJ_1_c = c(eb_tjvme$Mock_TJ_1_c_counts),
+                      Mock_ME_1_a = c(eb_tjvme$Mock_ME_1_a_counts),
+                      Mock_ME_1_b = c(eb_tjvme$Mock_ME_1_b_counts),
+                      Mock_ME_1_c = c(eb_tjvme$Mock_ME_1_c_counts)
+                      )
+str(cts)
+```
+
+```{r}
+# Load necessary library
+library(stringr)
+
+# Extract countData from cts
+countData <- as.matrix(cts[, -1])  # Exclude the first column (index column)
+
+# Set row names using the values from the first column
+rownames(countData) <- cts$X
+
+# Verify the structure of countData
+str(countData)
+```
+
+
+```{r}
+# Define column names from countData
+column_names <- colnames(countData)
+
+# Extract conditions (e.g., TJ vs. ME) from column names
+condition <- str_extract(column_names, "TJ|ME")
+
+# Extract replicates (a, b, c) from column names
+replicate <- str_extract(column_names, "[a-c]$")
+
+# Create colData data frame
+colData <- data.frame(
+  sample = column_names,
+  condition = factor(condition),
+  replicate = factor(replicate)
+)
+
+# Set row names to match column names of countData
+rownames(colData) <- colData$sample
+
+# Verify the structure of colData
+str(colData)
+
+```
+
+
+```{r}
+#check that column numbers are same as rows
+colData
+countData
+
+dim(colData)
+dim(countData)
+```
+
+
+```{r}
+#Run DESEq2 DGE
+library(DESeq2)
+
+# Create DESeqDataSet object with appropriate design formula
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ condition)
+
+# Optional pre-filtering for genes with total counts >= 10 (adjust threshold as needed)
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep, ]
+
+# Run DESeq2 analysis
+dds <- DESeq(dds)
+```
+
+
+```{r}
+# Extract results, specifically comparing 'TJ' to 'ME'
+res <- results(dds, contrast = c("condition", "TJ", "ME"))
+res
+```
+
+```{r}
+# Filter significant DEGs
+res <- res[!is.na(res$padj), ] # Remove rows with NA in padj
+
+res <- res[abs(res$log2FoldChange) >= 1.5 & res$padj <= 0.05, ] # Filter results based on LFC >= 1.5 and FDR p-value <= 0.05
+
+summary(res) #print result summary
+```
+
+
+```{r}
+# Explore results (visualization and interpretation)
+library(apeglm)
+
+resLFC <- lfcShrink(dds, coef = 2, type = "apeglm") #Shrink Log2 Fold Changes: Reduce overdispersion and improves visualization
+```
+
+# Create and save MA-plot - Confirm the cts matches with file name
+```{r}
+# Open a PNG device
+png("mock_1_MA_plot.png", width = 8, height = 6, units = "in", res = 300)
+
+## Create the MA-plot
+plotMA(resLFC, ylim = c(-10, 10),
+       xlab = "Mean normalized counts",
+       ylab = "Log2 fold change",
+       cex.lab = 1.5, # Increases axis label font size
+       cex.axis = 1.2, # Increases axis tick mark font size
+       cex.main = 1.5, # Increases title font size
+       cex.sub = 1.2) # Increases subtitle font size)
+
+# Close the PNG device
+dev.off()
+```
+
+
+# Repeat for the other cultivars/intervals
+```{r}
+# Mock_3 DGE 
+
+#Create counts df for the specific TJ and ME
+cts <- data.frame(" "= c(eb_tjvme$Name),
+                      Mock_TJ_3_a = c(eb_tjvme$Mock_TJ_3_a_counts),
+                      Mock_TJ_3_b = c(eb_tjvme$Mock_TJ_3_b_counts),
+                      Mock_TJ_3_c = c(eb_tjvme$Mock_TJ_3_c_counts),
+                      Mock_ME_3_a = c(eb_tjvme$Mock_ME_3_a_counts),
+                      Mock_ME_3_b = c(eb_tjvme$Mock_ME_3_b_counts),
+                      Mock_ME_3_c = c(eb_tjvme$Mock_ME_3_c_counts)
+                      )
+str(cts)
+
+```
+
+
+```{r}
+# Load necessary library
+library(stringr)
+
+# Extract countData from cts
+countData <- as.matrix(cts[, -1])  # Exclude the first column (index column)
+
+# Set row names using the values from the first column
+rownames(countData) <- cts$X
+
+# Verify the structure of countData
+str(countData)
+```
+
+
+```{r}
+# Define column names from countData
+column_names <- colnames(countData)
+
+# Extract conditions (e.g., TJ vs. ME) from column names
+condition <- str_extract(column_names, "TJ|ME")
+
+# Extract replicates (a, b, c) from column names
+replicate <- str_extract(column_names, "[a-c]$")
+
+# Create colData data frame
+colData <- data.frame(
+  sample = column_names,
+  condition = factor(condition),
+  replicate = factor(replicate)
+)
+
+# Set row names to match column names of countData
+rownames(colData) <- colData$sample
+
+# Verify the structure of colData
+str(colData)
+
+```
+
+
+```{r}
+#check that column numbers are same as rows
+colData
+countData
+
+dim(colData)
+dim(countData)
+```
+
+
+```{r}
+#Run DESEq2 DGE
+library(DESeq2)
+
+# Create DESeqDataSet object with appropriate design formula
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ condition)
+
+# Optional pre-filtering for genes with total counts >= 10 (adjust threshold as needed)
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep, ]
+
+# Run DESeq2 analysis
+dds <- DESeq(dds)
+```
+
+
+```{r}
+# Extract results, specifically comparing 'TJ' to 'ME''
+res <- results(dds, contrast = c("condition", "TJ", "ME"))
+res
+```
+
+```{r}
+# Filter significant DEGs
+res <- res[!is.na(res$padj), ] # Remove rows with NA in padj
+
+res <- res[abs(res$log2FoldChange) >= 1.5 & res$padj <= 0.05, ] # Filter results based on LFC >= 1.5 and FDR p-value <= 0.05
+
+summary(res) #print result summary
+```
+
+
+```{r}
+# Explore results (visualization and interpretation)
+library(apeglm)
+
+resLFC <- lfcShrink(dds, coef = 2, type = "apeglm") #Shrink Log2 Fold Changes: Reduce overdispersion and improves visualization
+```
+
+# Create and save MA-plot - Confirm the cts matches with file name
+```{r}
+# Open a PNG device
+png("mock_3_MA_plot.png", width = 8, height = 6, units = "in", res = 300)
+
+# Create the MA-plot
+plotMA(resLFC, ylim = c(-10, 10),
+       xlab = "Mean normalized counts",
+       ylab = "Log2 fold change",
+       cex.lab = 1.5, # Increases axis label font size
+       cex.axis = 1.2, # Increases axis tick mark font size
+       cex.main = 1.5, # Increases title font size
+       cex.sub = 1.2) # Increases subtitle font size)
+
+
+# Close the PNG device
+dev.off()
+```
+
+
+```{r}
+# Trt_1 DGE 
+
+#Create counts df for the specific TJ and ME
+cts <- data.frame(" "= c(eb_tjvme$Name),
+                      Trt_TJ_1_a = c(eb_tjvme$Trt_TJ_1_a_counts),
+                      Trt_TJ_1_b = c(eb_tjvme$Trt_TJ_1_b_counts),
+                      Trt_TJ_1_c = c(eb_tjvme$Trt_TJ_1_c_counts),
+                      Trt_ME_1_a = c(eb_tjvme$Trt_ME_1_a_counts),
+                      Trt_ME_1_b = c(eb_tjvme$Trt_ME_1_b_counts),
+                      Trt_ME_1_c = c(eb_tjvme$Trt_ME_1_c_counts)
+                      )
+str(cts)
+```
+
+
+```{r}
+# Load necessary library
+library(stringr)
+
+# Extract countData from cts
+countData <- as.matrix(cts[, -1])  # Exclude the first column (index column)
+
+# Set row names using the values from the first column
+rownames(countData) <- cts$X
+
+# Verify the structure of countData
+str(countData)
+```
+
+
+```{r}
+# Define column names from countData
+column_names <- colnames(countData)
+
+# Extract conditions (e.g., TJ vs. ME) from column names
+condition <- str_extract(column_names, "TJ|ME")
+
+# Extract replicates (a, b, c) from column names
+replicate <- str_extract(column_names, "[a-c]$")
+
+# Create colData data frame
+colData <- data.frame(
+  sample = column_names,
+  condition = factor(condition),
+  replicate = factor(replicate)
+)
+
+# Set row names to match column names of countData
+rownames(colData) <- colData$sample
+
+# Verify the structure of colData
+str(colData)
+
+```
+
+
+```{r}
+#check that column numbers are same as rows
+colData
+countData
+
+dim(colData)
+dim(countData)
+```
+
+
+```{r}
+#Run DESEq2 DGE
+library(DESeq2)
+
+# Create DESeqDataSet object with appropriate design formula
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ condition)
+
+# Optional pre-filtering for genes with total counts >= 10 (adjust threshold as needed)
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep, ]
+
+# Run DESeq2 analysis
+dds <- DESeq(dds)
+```
+
+
+```{r}
+# Extract results, specifically comparing 'TJ' to 'ME''
+res <- results(dds, contrast = c("condition", "TJ", "ME"))
+res
+```
+
+```{r}
+# Filter significant DEGs
+res <- res[!is.na(res$padj), ] # Remove rows with NA in padj
+
+res <- res[abs(res$log2FoldChange) >= 1.5 & res$padj <= 0.05, ] # Filter results based on LFC >= 1.5 and FDR p-value <= 0.05
+
+summary(res) #print result summary
+```
+
+
+```{r}
+# Explore results (visualization and interpretation)
+library(apeglm)
+
+resLFC <- lfcShrink(dds, coef = 2, type = "apeglm") #Shrink Log2 Fold Changes: Reduce overdispersion and improves visualization
+```
+
+# Create and save MA-plot - Confirm the cts matches with file name
+```{r}
+# Open a PNG device
+png("trt_1_MA_plot.png", width = 8, height = 6, units = "in", res = 300)
+
+# Create the MA-plot
+plotMA(resLFC, ylim = c(-10, 10),
+       xlab = "Mean normalized counts",
+       ylab = "Log2 fold change",
+       cex.lab = 1.5, # Increases axis label font size
+       cex.axis = 1.2, # Increases axis tick mark font size
+       cex.main = 1.5, # Increases title font size
+       cex.sub = 1.2) # Increases subtitle font size)
+
+
+# Close the PNG device
+dev.off()
+```
+
+
+```{r}
+# Trt_3 DGE 
+
+#Create counts df for the specific TJ and ME
+cts <- data.frame(" "= c(eb_tjvme$Name),
+                      Trt_TJ_3_a = c(eb_tjvme$Trt_TJ_3_a_counts),
+                      Trt_TJ_3_b = c(eb_tjvme$Trt_TJ_3_b_counts),
+                      Trt_TJ_3_c = c(eb_tjvme$Trt_TJ_3_c_counts),
+                      Trt_ME_3_a = c(eb_tjvme$Trt_ME_3_a_counts),
+                      Trt_ME_3_b = c(eb_tjvme$Trt_ME_3_b_counts),
+                      Trt_ME_3_c = c(eb_tjvme$Trt_ME_3_c_counts)
+                      )
+str(cts)
+```
+
+
+```{r}
+# Load necessary library
+library(stringr)
+
+# Extract countData from cts
+countData <- as.matrix(cts[, -1])  # Exclude the first column (index column)
+
+# Set row names using the values from the first column
+rownames(countData) <- cts$X
+
+# Verify the structure of countData
+str(countData)
+```
+
+
+```{r}
+# Define column names from countData
+column_names <- colnames(countData)
+
+# Extract conditions (e.g., TJ vs. ME) from column names
+condition <- str_extract(column_names, "TJ|ME")
+
+# Extract replicates (a, b, c) from column names
+replicate <- str_extract(column_names, "[a-c]$")
+
+# Create colData data frame
+colData <- data.frame(
+  sample = column_names,
+  condition = factor(condition),
+  replicate = factor(replicate)
+)
+
+# Set row names to match column names of countData
+rownames(colData) <- colData$sample
+
+# Verify the structure of colData
+str(colData)
+
+```
+
+
+```{r}
+#check that column numbers are same as rows
+colData
+countData
+
+dim(colData)
+dim(countData)
+```
+
+
+```{r}
+#Run DESEq2 DGE
+library(DESeq2)
+
+# Create DESeqDataSet object with appropriate design formula
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ condition)
+
+# Optional pre-filtering for genes with total counts >= 10 (adjust threshold as needed)
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep, ]
+
+# Run DESeq2 analysis
+dds <- DESeq(dds)
+```
+
+
+```{r}
+# Extract results, specifically comparing 'TJ' to 'ME''
+res <- results(dds, contrast = c("condition", "TJ", "ME"))
+res
+```
+
+```{r}
+# Filter significant DEGs
+res <- res[!is.na(res$padj), ] # Remove rows with NA in padj
+
+res <- res[abs(res$log2FoldChange) >= 1.5 & res$padj <= 0.05, ] # Filter results based on LFC >= 1.5 and FDR p-value <= 0.05
+
+summary(res) #print result summary
+```
+
+
+```{r}
+# Explore results (visualization and interpretation)
+library(apeglm)
+
+resLFC <- lfcShrink(dds, coef = 2, type = "apeglm") #Shrink Log2 Fold Changes: Reduce overdispersion and improves visualization
+```
+
+# Create and save MA-plot - Confirm the cts matches with file name
+```{r}
+# Open a PNG device
+png("trt_3_MA_plot.png", width = 8, height = 6, units = "in", res = 300)
+
+# Create the MA-plot
+plotMA(resLFC, ylim = c(-10, 10),
+       xlab = "Mean normalized counts",
+       ylab = "Log2 fold change",
+       cex.lab = 1.5, # Increases axis label font size
+       cex.axis = 1.2, # Increases axis tick mark font size
+       cex.main = 1.5, # Increases title font size
+       cex.sub = 1.2) # Increases subtitle font size)
+
+# Close the PNG device
+dev.off()
+```
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

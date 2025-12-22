@@ -1,0 +1,183 @@
+
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+#' PCA Analysis: Treatment vs Mock Samples
+#'
+#' Performs Principal Component Analysis on RNA-seq count data to visualize
+#' sample clustering between treated and mock control samples across plant lines
+#' (ME and TJ) and time intervals (1 and 3).
+#'
+#' Workflow:
+#' 1. Load count data from CSV
+#' 2. Calculate mean counts across replicates
+#' 3. Prepare count matrix and sample metadata
+#' 4. Run DESeq2 normalization
+#' 5. Generate PCA plot with rlog transformation
+#'
+#' Data available on request
+#' Input: countdata_Trt_vs_Mock_0507.csv
+#' Output: pca_plot.jpg (300 dpi, 8×8 inches)
+#'
+#' Please cite this publication when using this script: https://doi.org/10.1002/csc2.21392
+#' 
+
+```{r}
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(ggrepel)
+library(ggplot2)
+```
+
+
+```{r}
+#-------------------------
+# Read the cts_all data from CSV file
+countData_2607 <- read.csv("countdata_Trt_vs_Mock_0507.csv")
+```
+
+```{r}
+#Extract the total cts_all
+cts_all <- data.frame(" "= c(countData_2607$Name),
+                      Trt_ME_1_a = c(countData_2607$Trt_ME_1_a_counts ),
+                      Trt_ME_1_b = c(countData_2607$Trt_ME_1_b_counts),
+                      Trt_ME_1_c = c(countData_2607$Trt_ME_1_c_counts),
+                      Mock_ME_1_a = c(countData_2607$Mock_ME_1_a_counts),
+                      Mock_ME_1_b = c(countData_2607$Mock_ME_1_b_counts),
+                      Mock_ME_1_c = c(countData_2607$Mock_ME_1_c_counts),
+                      Trt_ME_3_a = c(countData_2607$Trt_ME_3_a_counts),
+                      Trt_ME_3_b = c(countData_2607$Trt_ME_3_b_counts),
+                      Trt_ME_3_c = c(countData_2607$Trt_ME_3_c_counts),
+                      Mock_ME_3_a = c(countData_2607$Mock_ME_3_a_counts),
+                      Mock_ME_3_b = c(countData_2607$Mock_ME_3_b_counts),
+                      Mock_ME_3_c = c(countData_2607$Mock_ME_3_c_counts),
+                      Trt_TJ_1_a = c(countData_2607$Trt_TJ_1_a_counts),
+                      Trt_TJ_1_b = c(countData_2607$Trt_TJ_1_b_counts),
+                      Trt_TJ_1_c = c(countData_2607$Trt_TJ_1_c_counts),
+                      Mock_TJ_1_a = c(countData_2607$Mock_TJ_1_a_counts),
+                      Mock_TJ_1_b = c(countData_2607$Mock_TJ_1_b_counts),
+                      Mock_TJ_1_c = c(countData_2607$Mock_TJ_1_c_counts),
+                      Trt_TJ_3_a = c(countData_2607$Trt_TJ_3_a_counts),
+                      Trt_TJ_3_b = c(countData_2607$Trt_TJ_3_b_counts),
+                      Trt_TJ_3_c = c(countData_2607$Trt_TJ_3_c_counts),
+                      Mock_TJ_3_a = c(countData_2607$Mock_TJ_3_a_counts),
+                      Mock_TJ_3_b = c(countData_2607$Mock_TJ_3_b_counts),
+                      Mock_TJ_3_c = c(countData_2607$Mock_TJ_3_c_counts))
+```
+
+```{r}
+library(dplyr)
+
+cts_all_avg <- cts_all %>%
+  mutate(Trt_ME_1_mean = rowMeans(select(., Trt_ME_1_a, Trt_ME_1_b, Trt_ME_1_c)),
+         Mock_ME_1_mean = rowMeans(select(., Mock_ME_1_a, Mock_ME_1_b, Mock_ME_1_c)),
+         Trt_ME_3_mean = rowMeans(select(., Trt_ME_3_a, Trt_ME_3_b, Trt_ME_3_c)),
+         Mock_ME_3_mean = rowMeans(select(., Mock_ME_3_a, Mock_ME_3_b, Mock_ME_3_c)),
+         Trt_TJ_1_mean = rowMeans(select(., Trt_TJ_1_a, Trt_TJ_1_b, Trt_TJ_1_c)),
+         Mock_TJ_1_mean = rowMeans(select(., Mock_TJ_1_a, Mock_TJ_1_b, Mock_TJ_1_c)),
+         Trt_TJ_3_mean = rowMeans(select(., Trt_TJ_3_a, Trt_TJ_3_b, Trt_TJ_3_c)),
+         Mock_TJ_3_mean = rowMeans(select(., Mock_TJ_3_a, Mock_TJ_3_b, Mock_TJ_3_c)))
+```
+
+```{r}
+#Make countData from the average counts for DESeq2
+cts_avg <- cts_all_avg[, -c(2:25)] #exclude columns 2-25
+
+colnames(cts_avg) <- gsub("_mean", "", colnames(cts_avg))
+cts_avg[, -1] <- lapply(cts_avg[, -1], as.integer)
+
+count_matrix <- as.matrix(cts_avg[-1, -1])  
+rownames(count_matrix) <- cts_avg[-1, 1]    
+colnames(count_matrix) <- names(cts_avg)[-1] 
+countData <- as.matrix(apply(cts_avg[,-1],2,as.numeric))
+row.names(countData) <- cts_avg[,1]
+```
+
+```{r}
+# Create colData data frame
+colData <- data.frame(
+  row.names = colnames(count_matrix),  # Set row names to match count_matrix columns
+  treatment = sub("^[^_]*_(.*)$", "\\1", colnames(count_matrix)),  # Extract treatment
+  group = sub("_.*$", "", colnames(count_matrix)),  # Extract group (ME or TJ)
+  interval = sub("^.*_(\\d)$", "\\1", colnames(count_matrix))  # Extract interval
+)
+```
+
+```{r}
+# Convert columns to factors
+colData$treatment <- factor(colData$treatment)
+colData$group <- factor(colData$group)
+colData$interval <- factor(colData$interval)
+
+# Ensure that the intervals and treatments are factors
+str(colData)
+```
+
+```{r}
+#check the data to make sure rows = columns
+dim(colData)
+dim(countData)
+```
+
+```{r}
+#perform deseq analysis
+library(DESeq2)
+
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ treatment)
+avgs_dds <- DESeq(dds)
+```
+
+# PCA plot
+```{r}
+library(ggrepel)
+library(ggplot2)
+
+# Perform rlog transformation
+rld <- rlog(avgs_dds, blind = FALSE)
+
+# Create PCA plot object
+pca_data <- plotPCA(rld, intgroup = c("treatment"), returnData = TRUE)
+
+# Define percentage of variance for the axes
+percentVar <- round(100 * attr(pca_data, "percentVar"))
+```
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+
+# Your PCA plot code
+pca_plot <- ggplot(pca_data, aes(PC1, PC2, color = treatment, shape = group, label = name)) +
+  geom_point(size = 6) +
+  geom_text_repel(size = 7) +  # Increase the size of the text labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  theme(
+    panel.background = element_blank(),      # Remove fill color
+    panel.grid.major = element_blank(),      # Remove major gridlines
+    panel.grid.minor = element_blank(),      # Remove minor gridlines
+    panel.border = element_rect(colour = "grey", fill = NA),  # Add border
+    legend.position = "none",                # Position legend on the right
+    text = element_text(size = 14),          # Increase the base text size
+    axis.title = element_text(size = 20),    # Increase the size of axis titles (x and y labels)
+    axis.text = element_text(size = 14),     # Increase the size of axis text (tick labels)
+    legend.text = element_text(size = 16)    # Increase the size of legend text
+  )
+
+```
+
+
+
+```{r}
+# Save the plot as a PNG file with 300 dpi and increased size
+ggsave(filename = "pca_plot.jpg", plot = pca_plot, dpi = 300, width = 8, height = 8)
+
+```
+

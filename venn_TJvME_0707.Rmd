@@ -1,0 +1,128 @@
+---
+title: "Venn Diagram and Gene Count Analysis - ME vs TJ"
+author: "Francis W"
+date: "2024-07-07"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Venn Diagram and Gene Count Analysis (Mock vs Treatment)
+
+## Overview
+Analyzes differentially expressed genes (DEGs) across Mock and Treatment conditions at two timepoints (1 and 3 wpi). Generates a 4-way Venn diagram and bar chart comparing gene overlap and counts across Mock_1, Mock_3, Trt_1, and Trt_3 samples.
+
+## Input
+- `degs_annot_MEvsTJ_080724.csv`: DEG annotation matrix with columns for Mock_1, Mock_3, Trt_1, and Trt_3 samples.
+
+## Output
+- `venn_degs_MEvsTJ_1707.csv`: Binary matrix (TRUE/FALSE) of DEG presence
+- `Venn diagram`: 4-way visualization of gene overlap
+- `Bar chart`: DEG count per sample category
+
+## Workflow
+1. Load DEG data and extract first 4 columns
+2. Rename columns to sample identifiers
+3. Convert values to binary (TRUE/FALSE)
+4. Calculate DEG counts per sample
+5. Generate Venn diagram and bar chart
+
+## Citation
+https://doi.org/10.1002/csc2.21392
+
+## Data Availability
+Data available upon request
+
+```{r}
+# Read the csv
+degs_all_MEvsTJ <- read.csv('degs_annot_MEvsTJ_080724.csv', sep = ',', row.names = 1)
+```
+
+```{r}
+# Select the first 5 columns
+degs_all_MEvsTJ <- degs_all_MEvsTJ[, 1:4]
+```
+
+```{r}
+# Rename columns in the data frame
+colnames(degs_all_MEvsTJ) <- c("Mock_1", "Mock_3", "Trt_1", "Trt_3")
+```
+
+```{r}
+# replace all NA values and zero values with FALSE
+degs_all_MEvsTJ[is.na(degs_all_MEvsTJ) | degs_all_MEvsTJ == 0] <- FALSE
+```
+
+
+```{r}
+#replace all other values with TRUE.
+degs_all_MEvsTJ[degs_all_MEvsTJ != FALSE] <- TRUE
+```
+
+
+```{r}
+#count the number of non-zero and non-NA values in each column
+gene_counts_MEvsTJ <- apply(degs_all_MEvsTJ, 2, function(col) sum(col != 0 & !is.na(col)))
+
+print(gene_counts_MEvsTJ)
+```
+
+
+```{r}
+write.csv(degs_all_MEvsTJ, file = "venn_degs_MEvsTJ_1707.csv", row.names = FALSE)
+
+```
+
+```{r}
+# Load required libraries
+library(VennDiagram)
+library(ggplot2)
+library(gridExtra)
+```
+
+
+```{r}
+# Create a list of sets for the Venn diagram
+venn_sets <- list(
+  Mock_1 = which(degs_all_MEvsTJ$Mock_1 != 0),
+  Mock_3 = which(degs_all_MEvsTJ$Mock_3 != 0),
+  Trt_1 = which(degs_all_MEvsTJ$Trt_1 != 0),
+  Trt_3 = which(degs_all_MEvsTJ$Trt_3 != 0)
+)
+```
+
+
+```{r}
+# Define colors for each category
+colors <- c("#FF9999", "#66B2FF", "#99FF99", "#FFCC99")
+```
+
+
+```{r}
+# Create the Venn diagram
+venn.plot <- venn.diagram(
+  x = venn_sets,
+  category.names = c("Mock_1", "Mock_3", "Trt_1", "Trt_3"),
+  fill = colors,
+  filename = NULL,
+  lwd = 0.5,
+  lty = "solid",
+  col = "grey"
+)
+```
+
+
+```{r}
+bar_plot <- ggplot(data.frame(category = names(gene_counts_MEvsTJ), count = gene_counts_MEvsTJ), aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = colors) +
+  labs(title = " ", x = "", y = "Number of DEGs") +
+  theme_classic() +
+  theme(
+        axis.line = element_line(color = "grey"), # Make axis lines grey
+        axis.text.x = element_text(angle = 0, hjust = 0.5)  # Rotate x-axis labels for better readability
+  )
+
+# Arrange plots vertically
+grid.arrange(venn.plot, bar_plot, nrow = 2)
+```
+

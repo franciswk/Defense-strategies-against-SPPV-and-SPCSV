@@ -1,0 +1,116 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Treatment vs. Mock DEG Venn + Bar Plot
+
+# Purpose: Visualize overlap and counts of DEGs across ME_1, ME_3, TJ_1, TJ_3.
+# Input: 'degs_sig_080724.csv' (rows = genes; columns = groups; non-zero = present).
+# Steps: Rename columns; treat NA/0 as absence (FALSE), others as presence (TRUE); count per group.
+# Outputs: 'venn_degs_TrtvsMock_df.csv' (logical matrix), 'TrtvMock_venn_diagram.png' (Venn + bar chart).
+# Requirements: VennDiagram, ggplot2, gridExtra.
+# Usage: Knit this Rmd to HTML with the CSV in the working directory.
+# Data: Available on request.
+# Citation: DOI 10.1002/csc2.21392
+
+---
+
+```{r setup, include=FALSE}
+# Read the csv
+degs_TrtvsMock_df <- read.csv('degs_sig_080724.csv', sep = ',', row.names = 1)
+```
+
+
+```{r}
+# Rename columns in the data frame
+colnames(degs_TrtvsMock_df) <- c("ME_1", "ME_3", "TJ_1", "TJ_3")
+```
+
+```{r}
+# replace all NA values and zero values with FALSE
+degs_TrtvsMock_df[is.na(degs_TrtvsMock_df) | degs_TrtvsMock_df == 0] <- FALSE
+
+#replace all other values with TRUE
+degs_TrtvsMock_df[degs_TrtvsMock_df != FALSE] <- TRUE
+```
+
+
+```{r}
+#count the number of non-zero and non-NA values in each column
+gene_counts_TrtvsMock <- apply(degs_TrtvsMock_df, 2, function(col) sum(col != 0 & !is.na(col)))
+
+print(gene_counts_TrtvsMock)
+```
+
+
+```{r}
+# Save the file for venn diagram
+write.csv(degs_TrtvsMock_df, file = "venn_degs_TrtvsMock_df.csv", row.names = FALSE)
+```
+
+```{r}
+# Load required libraries
+library(VennDiagram)
+library(ggplot2)
+library(gridExtra)
+```
+
+
+```{r}
+# Create a list of sets for the Venn diagram
+venn_sets <- list(
+  ME_1 = which(degs_TrtvsMock_df$ME_1 != 0),
+  ME_3 = which(degs_TrtvsMock_df$ME_3 != 0),
+  TJ_1 = which(degs_TrtvsMock_df$TJ_1 != 0),
+  TJ_3 = which(degs_TrtvsMock_df$TJ_3 != 0)
+)
+```
+
+```{r}
+# Define colors for each category
+colors <- c("#FF9999", "#66B2FF", "#99FF99", "#FFCC99")
+```
+
+
+```{r}
+# Create the Venn diagram
+venn.plot <- venn.diagram(
+  x = venn_sets,
+  category.names = c("ME_1", "ME_3", "TJ_1", "TJ_3"),
+  fill = colors,
+  filename = NULL,
+  lwd = 0.5,
+  lty = "solid",
+  col = "grey",
+  cex = 2,  # Increase font size for category labels
+  cat.cex = 2  # Increase font size for category names
+)
+
+# Convert VennDiagram output (a list of grobs) into a single grob
+venn_grob <- grid::grobTree(venn.plot)
+
+bar_plot <- ggplot(data.frame(category = names(gene_counts_TrtvsMock), count = gene_counts_TrtvsMock), aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = colors) +
+  labs(title = " ", x = " ", y = "No. of Genes") +
+  theme_classic() +
+  theme(
+  axis.text.x = element_text(angle = 0, hjust = 0.5, size = 20),  # Increase x-axis label font size
+    axis.text.y = element_text(size = 20),  # Increase y-axis label font size
+    axis.title.x = element_text(size = 20),  # Increase x-axis title font size
+    axis.title.y = element_text(size = 20),  # Increase y-axis title font size
+    plot.title = element_text(size = 20, face = "bold"),  # Increase plot title font size
+    axis.line = element_line(color = "grey")  # Make axis lines grey
+      )
+# Arrange plots vertically
+grid.arrange(grobs = list(venn_grob, bar_plot), nrow = 2)
+```
+
+```{r}
+# Arrange plots vertically and save as PNG
+png(filename = "TrtvMock_venn_diagram.png", width = 3000, height = 4000, res = 300)
+grid.arrange(grobs = list(venn_grob, bar_plot), nrow = 2)
+dev.off()
+```
+

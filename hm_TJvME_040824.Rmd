@@ -1,0 +1,198 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+# Overview
+# Generates heatmaps comparing TJ vs ME DEGs (mocks and treatments) using mean log2 fold-change values (distinct from the Trt vs Mock script).
+
+# Inputs:
+#   - select_degs_TJvME_080724.csv (full DEG set)
+#   - top_degs_TJvME_040824.csv (top 10 up/down DEGs per sample)
+
+# Outputs:
+#   - hm_TJvME_all.png (all DEGs)
+#   - hm_TJvME_topdegs.png (top DEGs)
+#   - degs_nonas_TJvME_170724.csv (processed means)
+
+# Steps:
+#   1) Load and clean DEG data (NAs→0, remove all-zero rows, standardize names).
+#   2) Compute mean log2FC per gene across replicates.
+#   3) Plot all-DEG heatmap; then top-DEG heatmap with labels.
+#   4) Save PNGs at 300 DPI (blue-white-red palette, clustered rows).
+
+# Citation: https://doi.org/10.1002/csc2.21392
+
+# Data Availability: Data available upon request
+
+# Depends on: dplyr, tidyr, pheatmap
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(pheatmap) 
+```
+
+```{r}
+# Read CSV file - First check the file for duplicates
+selected_degs_TJvME <- read.csv("select_degs_TJvME_080724.csv", row.names = 1)
+```
+
+```{r}
+# Select the relevant columns
+colnames(selected_degs_TJvME)
+
+selected_degs_TJvME <- selected_degs_TJvME[, c("Synonym", "Mocks_1_TJvME_l2fc", "Mocks_3_TJvME_l2fc", "Trt_1_TJvME_l2fc", "Trt_3_TJvME_l2fc")]
+```
+
+```{r}
+# Replace NA values with 0
+selected_degs_TJvME <- selected_degs_TJvME %>%
+  replace_na(list(Mocks_1_TJvME_l2fc = 0, Mocks_3_TJvME_l2fc = 0, Trt_1_TJvME_l2fc = 0, Trt_3_TJvME_l2fc = 0))
+```
+
+```{r}
+# Remove rows where all specified values are 0
+selected_degs_TJvME <- selected_degs_TJvME[rowSums(selected_degs_TJvME[, -1] != 0) > 0, ]
+```
+
+```{r}
+# Create a mapping of original case
+original_case <- unique(selected_degs_TJvME[, "Synonym"])
+case_map <- setNames(original_case, tolower(original_case))
+```
+
+```{r}
+# Standardize the case of Synonym to lower case for grouping
+selected_degs_TJvME$Synonym <- tolower(selected_degs_TJvME$Synonym)
+
+```
+
+```{r}
+# Summarize gene expression by calculating the mean for each group
+degs_mean_TJvME_df <- selected_degs_TJvME %>%
+  group_by(Synonym) %>%
+  summarize(
+    Mock_1 = mean(Mocks_1_TJvME_l2fc, na.rm = TRUE),
+    Mock_3 = mean(Mocks_3_TJvME_l2fc, na.rm = TRUE),
+    Trt_1 = mean(Trt_1_TJvME_l2fc, na.rm = TRUE),
+    Trt_3 = mean(Trt_3_TJvME_l2fc, na.rm = TRUE)
+  )
+```
+
+```{r}
+# Restore the original case
+degs_mean_TJvME_df$Synonym <- case_map[degs_mean_TJvME_df$Synonym]
+```
+
+```{r}
+# save the df
+write.csv(degs_mean_TJvME_df, file = "degs_nonas_TJvME_170724.csv", row.names = FALSE)
+```
+
+
+```{r}
+# Subset the heatmap data
+heatmap_degs_mean <- degs_mean_TJvME_df[, 2:5]
+
+# Close any open graphical devices
+while (!is.null(dev.list())) {
+  dev.off()
+}
+
+# Define the filename and file format
+output_file <- "hm_TJvME_all.png"
+
+# Open a graphical device with adjusted width and height to fit the plot
+png(output_file, width = 1600, height = 3000, res = 300)
+
+# Generate the heatmap
+pheatmap(heatmap_degs_mean,
+         cluster_rows = TRUE,
+         cluster_cols = FALSE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         main = " ",
+         show_rownames = FALSE,  # Hide row names
+         border_color = "lightgrey",
+         cellwidth = 70,  # Adjust cell width
+         angle_col = 0,  # Set angle to 0 for horizontal column names
+         #cellheight = 10,  # Adjust cell height
+         fontsize = 14  # Adjust font size
+         )
+
+# Close the graphical device
+dev.off()
+
+```
+
+
+# Top 10 up and down regulated DEGs from each sample based on mean
+# From: degs_nonas_TJvME_170724.csv
+```{r}
+# Read csv file - prepared by filtering genes from 'heatmap_selectdegs_TrtvsMock_100724_.csv'
+hm_degs_TJvME <- read.csv("top_degs_TJvME_040824.csv")
+```
+
+```{r}
+# Replace NA values with 0
+colnames(hm_degs_TJvME)
+hm_degs_TJvME <- hm_degs_TJvME %>%
+  replace_na(list(Mock_1 = 0, Mock_3 = 0, Trt_1 = 0, Trt_3 = 0))
+```
+
+```{r}
+# Remove rows where all specified values are 0
+selected_degs_TJvME <- selected_degs_TJvME[rowSums(selected_degs_TJvME[, -1] != 0) > 0, ]
+```
+
+```{r}
+# Function to capitalize the first letter of each name
+capitalize_first <- function(name) {
+  substr(name, 1, 1) <- toupper(substr(name, 1, 1))
+  name
+}
+
+# Extract sample names, limit to 30 characters, and capitalize the first letter
+sample_names <- sapply(substr(hm_degs_TJvME$Synonym, 1, 35), capitalize_first)
+```
+
+```{r}
+# Subset the heatmap data
+heatmap_degs_mean <- hm_degs_TJvME[, 2:5]
+
+# Close any open graphical devices
+while (!is.null(dev.list())) {
+  dev.off()
+}
+
+# Define the filename and file format
+output_file <- "hm_TJvME_topdegs.png"
+
+# Open a graphical device with adjusted width and height to fit the plot
+png(output_file, width = 1600, height = 2500, res = 300)
+
+# Generate the heatmap
+pheatmap(heatmap_degs_mean,
+         cluster_rows = TRUE,
+         cluster_cols = FALSE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         main = " ",
+         labels_row = sample_names,  # Retain sample labels
+         angle_col = 0,  # Set angle to 0 for horizontal column names
+         border_color = "lightgrey",
+         cellwidth = 35,  # Adjust cell width
+         cellheight = 10,  # Adjust cell height
+         fontsize = 8  # Adjust font size
+         )
+
+# Close the graphical device
+dev.off()
+
+```
+
+
+```
+

@@ -13,7 +13,7 @@ editor_options:
 # Requirements: VennDiagram, ggplot2, gridExtra.
 # Usage: Knit this Rmd to HTML with the CSV in the working directory.
 # Data: Available on request.
-# Citation: DOI 10.1002/csc2.21392
+# Citation: https://doi.org/10.1002/csc2.21392
 
 ---
 

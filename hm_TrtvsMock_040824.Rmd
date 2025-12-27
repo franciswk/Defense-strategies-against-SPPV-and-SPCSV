@@ -1,0 +1,202 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+# Overview
+# Generates heatmaps comparing treatment vs mock-treated DEGs across plant varieties
+# (ME and TJ) with replicates, using mean log2 fold-change values.
+#
+# Input Files:
+#   - select_degs_080724.csv: Full DEG dataset
+#   - top_degs_TrtvMock_040824.csv: Top 10 up/down DEGs per sample
+#
+# Output Files:
+#   - hm_TrtvMock_all.png: All DEGs heatmap
+#   - hm_TrtvMock_topdegs.png: Top DEGs heatmap
+#   - selected_degs_nonas_100724.csv: Processed DEG data
+#
+# Workflow:
+#   1. Load and clean DEG data (handle NAs, remove zeros, standardize names)
+#   2. Summarize by mean log2FC per gene
+#   3. Generate heatmaps with hierarchical row clustering (blue-white-red scale)
+#   4. Output PNG files at 300 DPI
+
+# Citation: https://doi.org/10.1002/csc2.21392
+
+# Data Availability: Data available upon request
+
+# Dependencies: dplyr, tidyr, pheatmap
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+```
+
+#DEGS summarized by means - good, used
+```{r}
+# Read csv file - First check the file for duplicates
+selected_degs_TrtvsMock <- read.csv("select_degs_080724.csv", row.names = 1)
+
+```
+
+
+```{r}
+# Select the relevant columns
+colnames(selected_degs_TrtvsMock)
+
+selected_degs_TrtvsMock <- selected_degs_TrtvsMock[, c("Synonym", "ME_1_TrtvsMock_l2fc", "ME_3_TrtvsMock_l2fc", "TJ_1_TrtvsMock_l2fc", "TJ_3_TrtvsMock_l2fc")]
+```
+
+```{r}
+# Replace NA values with 0
+selected_degs_TrtvsMock <- selected_degs_TrtvsMock %>%
+  replace_na(list(ME_1_TrtvsMock_l2fc = 0, ME_3_TrtvsMock_l2fc = 0, TJ_1_TrtvsMock_l2fc = 0, TJ_3_TrtvsMock_l2fc = 0))
+```
+
+```{r}
+# Remove rows where all specified values are 0
+selected_degs_TrtvsMock <- selected_degs_TrtvsMock[rowSums(selected_degs_TrtvsMock[, -1] != 0) > 0, ]
+```
+
+```{r}
+# Create a mapping of original case
+original_case <- unique(selected_degs_TrtvsMock[, "Synonym"])
+case_map <- setNames(original_case, tolower(original_case))
+```
+
+```{r}
+# Standardize the case of Synonym to lower case for grouping
+selected_degs_TrtvsMock$Synonym <- tolower(selected_degs_TrtvsMock$Synonym)
+
+```
+
+```{r}
+colnames(selected_degs_TrtvsMock)
+
+# Summarize gene expression by calculating the mean for each group
+selected_degs_TrtvsMock <- selected_degs_TrtvsMock %>%
+  group_by(Synonym) %>%
+  summarize(
+    ME_1 = mean(ME_1_TrtvsMock_l2fc, na.rm = TRUE),
+    ME_3 = mean(ME_3_TrtvsMock_l2fc, na.rm = TRUE),
+    TJ_1 = mean(TJ_1_TrtvsMock_l2fc, na.rm = TRUE),
+    TJ_3 = mean(TJ_3_TrtvsMock_l2fc, na.rm = TRUE)
+  )
+```
+
+```{r}
+# Restore the original case
+selected_degs_TrtvsMock$Synonym <- case_map[selected_degs_TrtvsMock$Synonym]
+```
+
+```{r}
+# save the df
+write.csv(selected_degs_TrtvsMock, file = "selected_degs_nonas_100724.csv", row.names = FALSE)
+
+colnames(selected_degs_TrtvsMock)
+str(selected_degs_TrtvsMock)
+```
+
+
+```{r}
+# Subset the heatmap data
+heatmap_degs_mean <- selected_degs_TrtvsMock[, 2:5]
+
+# Close any open graphical devices
+while (!is.null(dev.list())) {
+  dev.off()
+}
+
+# Define the filename and file format
+output_file <- "hm_TrtvMock_all.png"
+
+# Open a graphical device with adjusted width and height to fit the plot
+png(output_file, width = 1600, height = 3000, res = 300)
+
+# Generate the heatmap
+pheatmap(heatmap_degs_mean,
+         cluster_rows = TRUE,
+         cluster_cols = FALSE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         main = " ",
+         show_rownames = FALSE,  # Hide row names
+         border_color = "lightgrey",
+         cellwidth = 70,  # Adjust cell width
+         angle_col = 0,  # Set angle to 0 for horizontal column names
+         #cellheight = 10,  # Adjust cell height
+         fontsize = 14  # Adjust font size
+         )
+
+# Close the graphical device
+dev.off()
+
+```
+
+# Top 10 up and down  DEGs from each sample based on mean
+# From: selected_degs_nonas_100724.csv
+```{r}
+# Read csv file - prepared by filtering genes from 
+selected_degs_hm <- read.csv("top_degs_TrtvMock_040824.csv")
+```
+
+```{r}
+# Function to capitalize the first letter of each name
+capitalize_first <- function(name) {
+  substr(name, 1, 1) <- toupper(substr(name, 1, 1))
+  name
+}
+
+# Extract sample names, limit to 30 characters, and capitalize the first letter
+sample_names <- sapply(substr(selected_degs_hm$Synonym, 1, 35), capitalize_first)
+```
+
+```{r}
+# Replace NA values with 0
+selected_degs_hm <- selected_degs_hm %>%
+  replace_na(list(ME_1 = 0, ME_3 = 0, TJ_1 = 0, TJ_3 = 0))
+```
+
+```{r}
+# Remove rows where all specified values are 0
+selected_degs_hm <- selected_degs_hm[rowSums(selected_degs_hm[, -1] != 0) > 0, ]
+```
+
+```{r}
+# Subset the heatmap data
+heatmap_degs_mean <- selected_degs_hm[, 2:5]
+
+# Close any open graphical devices
+while (!is.null(dev.list())) {
+  dev.off()
+}
+
+# Define the filename and file format
+output_file <- "hm_TrtvMock_topdegs.png"
+
+# Open a graphical device with adjusted width and height to fit the plot
+png(output_file, width = 1800, height = 3300, res = 300)
+
+# Generate the heatmap
+pheatmap(heatmap_degs_mean,
+         cluster_rows = TRUE,
+         cluster_cols = FALSE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         main = " ",
+         labels_row = sample_names,  # Retain sample labels
+         angle_col = 0,  # Set angle to 0 for horizontal column names
+         border_color = "lightgrey",
+         cellwidth = 35,  # Adjust cell width
+         cellheight = 10,  # Adjust cell height
+         fontsize = 8  # Adjust font size
+         )
+
+# Close the graphical device
+dev.off()
+
+```
+

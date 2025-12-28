@@ -21,6 +21,9 @@ Features:
 Note: Modify input/output filenames to generate plots for me_1, me_3, or tj_1 samples.
 
 Dependencies: pandas, matplotlib, numpy
+
+Data: Available on request.
+Citation: https://doi.org/10.1002/csc2.21392
 """
 
 
